@@ -3,6 +3,7 @@ import pickle
 import base64
 import openai
 import mailparser
+from email.mime.text import MIMEText
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
@@ -64,12 +65,14 @@ def parse_email(service, email):
 
     # Extract subject and text content from the email
     subject = mail.subject
+    sender_email = mail.from_[0][1] 
     text_content = "".join(mail.text_plain)
 
     return {
         'threadId': thread_id,
         'subject': subject,
-        'content': text_content
+        'content': text_content,
+        'sender': sender_email
     }
 
 def check_needs_reply(subject, content):
@@ -95,10 +98,9 @@ def check_needs_reply(subject, content):
 
     # Extract the text from the completion choice and strip whitespace
     response = chat_completion.choices[0].message.content.strip().lower() == "yes"
-    print(response)
     return response
 
-def gen_reply(subject, content):
+def generate_reply(subject, content):
     prompt = f"""
     SUBJECT: {subject}
     EMAIL CONTENT: {content}
@@ -108,7 +110,7 @@ def gen_reply(subject, content):
 
     ANSWER:
     """
-    
+
     chat_completion = client.chat.completions.create(
         model="gpt-4-turbo",
         messages=[
@@ -123,17 +125,26 @@ def gen_reply(subject, content):
     print(reply)
     return reply
 
-def create_draft_reply(service, thread_id, reply):
-    message = {
+def create_draft_reply(service, thread_id, reply, recipient_email, subject):
+    # Create a MIMEText object to construct the message
+    message = MIMEText(reply)
+    message['to'] = recipient_email
+    message['subject'] = "Re: " + subject
+
+    # Encode the message's bytes for the raw property
+    encoded_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
+
+    # Create the body for the draft
+    draft_body = {
         'message': {
             'threadId': thread_id,
-            'raw': base64.urlsafe_b64encode(reply.encode()).decode()
+            'raw': encoded_message
         }
     }
 
     try:
-        service.users().drafts().create(userId='me', body=message).execute()
-        print(f"Draft created for thread ID: {thread_id}")
+        draft = service.users().drafts().create(userId='me', body=draft_body).execute()
+        print(f"Draft created for thread ID: {thread_id} with draft ID: {draft['id']}")
     except HttpError as error:
         print(f"An error occurred: {error}")
 
@@ -142,10 +153,11 @@ def reply_if_needed(service, email):
     subject = parsed_email['subject']
     content = parsed_email['content']
     thread_id = parsed_email['threadId']
+    sender_email = parsed_email['sender']
     needs_reply = check_needs_reply(subject, content)
     if needs_reply:
-        reply = gen_reply(subject, content)
-        create_draft_reply(service, thread_id, reply)
+        reply = generate_reply(subject, content)
+        create_draft_reply(service, thread_id, reply, sender_email, subject)
 
 def main():
     service = create_service()
