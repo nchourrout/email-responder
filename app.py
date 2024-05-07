@@ -3,11 +3,16 @@ import pickle
 import base64
 import openai
 import mailparser
-from email.mime.text import MIMEText
+from email.message import EmailMessage
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
 from googleapiclient.errors import HttpError
+
+# Config variables
+SENDER_EMAIL = 'your_email_address@sender.com'
+TIME_RANGE = '1h'  # Time range for recent emails (e.g., '1h' for 1 hour)
+CUSTOM_INSTRUCTIONS = """My name is Nico. End emails with Best,"""
 
 class Email:
     def __init__(self, thread_id, subject, content, sender):
@@ -44,10 +49,7 @@ def create_service():
     return build('gmail', 'v1', credentials=creds)
 
 def get_recent_emails(service):
-    time_range = '1h'
-    
-    # Construct query to search for emails within the time range and in the inbox
-    query = f"in:inbox newer_than:{time_range}"
+    query = f"in:inbox newer_than:{TIME_RANGE}"
 
     try:
         # Execute query to fetch recent emails
@@ -80,7 +82,6 @@ def check_needs_reply(email):
     SUBJECT: {email.subject}
     EMAIL CONTENT: {email.content}
     ---
-
     Task: Above is an email. Your goal is identify if it requires a reply.
     Return YES it it does, otherwise, return NO; (Return ONLY YES or NO)
     """
@@ -101,16 +102,17 @@ def generate_reply(email):
     SUBJECT: {email.subject}
     EMAIL CONTENT: {email.content}
     ---
-
     Task: Compose a reply for the email above
     Ensure that the reply is suitable for a professional email setting and addresses the unknown topic in a clear, structured, and detailed manner.
     ONLY return the text content of the reply.
+    ---
+    Additional instructions: {CUSTOM_INSTRUCTIONS}
     """
 
     chat_completion = client.chat.completions.create(
         model="gpt-4-turbo",
         messages=[
-            {"role": "system", "content": "You are an assistant trained to draft email replies."},
+            {"role": "system", "content": "You are a virtual assistant trained to draft email replies."},
             {"role": "user", "content": prompt}
         ],
         max_tokens=150 
@@ -118,16 +120,21 @@ def generate_reply(email):
 
     return chat_completion.choices[0].message.content.strip()
 
-def create_draft_reply(service, inbound_email, reply):
-    # Create a MIMEText object to construct the message
-    message = MIMEText(reply)
-    message['to'] = inbound_email.sender
-    message['subject'] = "Re: " + inbound_email.subject
+def create_mime_message(subject, recipient_email, text_content):
+    mime_message = EmailMessage()
+    mime_message["From"] = SENDER_EMAIL
+    mime_message["To"] = recipient_email
+    mime_message["Subject"] = subject
 
-    # Encode the message's bytes for the raw property
-    encoded_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
+    mime_message.set_content(text_content.replace("\n", "<br>\n"), 'html')
+    encoded_message = base64.urlsafe_b64encode(mime_message.as_bytes()).decode()
 
-    # Create the body for the draft
+    return encoded_message
+
+def create_draft_reply(service, inbound_email, reply_content):
+    recipient_email = inbound_email.sender # We only reply to the sender of the email
+    encoded_message = create_mime_message("Re: " + inbound_email.subject, recipient_email, reply_content)
+    
     draft_body = {
         'message': {
             'threadId': inbound_email.thread_id,
@@ -137,7 +144,7 @@ def create_draft_reply(service, inbound_email, reply):
 
     try:
         draft = service.users().drafts().create(userId='me', body=draft_body).execute()
-        print(f"Draft created for thread ID: {inbound_email.thread_id} with draft ID: {draft['id']} and message: {reply}")
+        print(f"Draft created for thread ID: {inbound_email.thread_id} with draft ID: {draft['id']} and message: {reply_content}")
     except HttpError as error:
         print(f"An error occurred: {error}")
 
