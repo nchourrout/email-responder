@@ -149,16 +149,23 @@ def create_draft_reply(service, inbound_email, reply_content):
         print(f"An error occurred: {error}")
 
 def reply_if_needed(service, email):
-    inbound_email = parse_email(service, email['id'])
-    if check_needs_reply(inbound_email):
-        reply = generate_reply(inbound_email)
-        create_draft_reply(service, inbound_email, reply)
+    try:
+        inbound_email = parse_email(service, email['id'])
+        if inbound_email and check_needs_reply(inbound_email):
+            reply = generate_reply(inbound_email)
+            if reply:
+                create_draft_reply(service, inbound_email, reply)
+    except Exception as e:
+        print(f'An error occurred while processing email: {e}')
 
 def main():
-    service = create_service()
-    emails = get_recent_emails(service)
-    for email in emails:
-        reply_if_needed(service, email)
+    try:
+        service = create_service()
+        emails = get_recent_emails(service)
+        for email in emails:
+            reply_if_needed(service, email)
+    except Exception as e:
+        print(f'An error occurred: {e}')
 
 if __name__ == '__main__':
     main()
