@@ -1,7 +1,7 @@
 # Gmail AI Auto Responder
 This python script drafts AI responses to incoming emails in Gmail.
 
-*Note: this is the companion code to this [Medium post](https://medium.com/@nchourrout/i-made-an-email-auto-responder-to-conquer-my-writers-block) and is therefore optimized to be easy to understand. Making it production ready will require additional changes. See further down.*
+*Note: this is the companion code to this [Medium post](https://medium.com/@nchourrout/i-made-an-email-auto-responder-to-conquer-my-writers-block-aa2b91db6741) and is therefore optimized to be easy to understand. Making it production ready will require additional changes. See further down.*
 
 ## How it works
 1. It opens up a browser window (unless valid credentials are found in `token.pickle`) to sign in with Google
